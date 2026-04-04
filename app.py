@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 # Sayfa Yapılandırması
 st.set_page_config(page_title="Yankı Risk Paneli", layout="wide")
 
-# Başlık Güncellemesi (İstediğin gibi daha genel ve profesyonel)
+# Profesyonel Başlık
 st.title("🛡️ Yankı Finansal Risk & Portföy Analiz Terminali")
 st.markdown("---")
 
@@ -21,20 +21,18 @@ def format_ticker(symbol):
 
 # --- GİRİŞ ALANI ---
 st.sidebar.header("🔍 Analiz Merkezi")
-input_symbol = st.sidebar.text_input("Hisse veya Kripto Yazın (Örn: THYAO, BTC, AAPL)", "THYAO")
+input_symbol = st.sidebar.text_input("Hisse veya Kripto Yazın", "THYAO")
 ticker = format_ticker(input_symbol)
 
 days = st.sidebar.slider("Analiz Süresi (Gün)", 30, 1095, 365)
 start_date = datetime.now() - timedelta(days=days)
 
-# --- VERİ ÇEKME VE HATA YÖNETİMİ ---
+# --- VERİ ÇEKME ---
 @st.cache_data
 def get_clean_data(t, start):
     try:
-        # Veriyi çekiyoruz
         df = yf.download(t, start=start)['Close']
         if df.empty: return None
-        # Eğer veri "Series" tipindeyse "DataFrame"e zorluyoruz (Hatanın çözümü burası)
         if isinstance(df, pd.Series):
             df = df.to_frame()
         return df.ffill().dropna()
@@ -43,19 +41,16 @@ def get_clean_data(t, start):
 
 data = get_clean_data(ticker, start_date)
 
-if data is not None and len(data) > 2:
-    # Veriyi tekil sütun haline getiriyoruz ki hesaplamalar şaşmasın
-    price_col = data.iloc[:, 0] 
+if data is not None and len(data) > 5:
+    # Hesaplamalar
+    price_col = data.iloc[:, 0]
     returns = price_col.pct_change().dropna()
-    
-    # Metrik Hesaplamaları
     total_ret = ((price_col.iloc[-1] / price_col.iloc[0]) - 1) * 100
     vol = returns.std() * np.sqrt(252) * 100
     risk_score = min(10, max(1, vol / 6))
     
     # --- ÜST METRİKLER ---
     c1, c2, c3 = st.columns(3)
-    # float() zorlaması ile TypeError riskini tamamen bitiriyoruz
     c1.metric("💰 Dönemlik Getiri", f"%{float(total_ret):.2f}")
     c2.metric("📉 Risk (Volatilite)", f"%{float(vol):.2f}")
     c3.metric("📊 Risk Skoru", f"{float(risk_score):.1f} / 10")
@@ -65,22 +60,28 @@ if data is not None and len(data) > 2:
     fig = px.line(data, template="plotly_dark", labels={'value': 'Fiyat', 'index': 'Tarih'})
     st.plotly_chart(fig, use_container_width=True)
 
-    # --- OTOMATİK ANALİZ VE YORUMLAR ---
+    # --- ANALİZ VE STRATEJİ ---
     st.markdown("---")
     col_a, col_b = st.columns(2)
     
     with col_a:
         st.subheader("🧐 Teknik Görünüm")
         if risk_score > 7:
-            st.warning(f"**Yüksek Risk:** {input_symbol.upper()} şu an oldukça agresif hareket ediyor. Portföy dağılımında ağırlığına dikkat edilmeli.")
+            st.warning("**Yüksek Risk:** Varlık şu an oldukça agresif hareket ediyor.")
         elif risk_score > 4:
-            st.info(f"**Dengeli Risk:** Standart piyasa koşullarında hareket ediyor. Orta vadeli stratejiler için uygun görünüyor.")
+            st.info("**Dengeli Risk:** Standart piyasa koşullarında hareket ediyor.")
         else:
-            st.success(f"**Düşük Risk:** Defansif bir karakter sergiliyor. Riskten kaçınan yatırımcılar için ideal.")
+            st.success("**Düşük Risk:** Defansif ve sakin bir karakter sergiliyor.")
 
     with col_b:
         st.subheader("💡 Strateji Notu")
         if total_ret > 0:
-            st.write(f"🚀 {input_symbol.upper()}, seçilen dönemde piyasanın üzerinde bir performans sergileyerek yatırımcısını memnun etmiş.")
+            st.write(f"🚀 {input_symbol.upper()} seçilen dönemde pozitif bir trend izlemiş.")
         else:
-            st.write(f"📉 Negatif bir trend gözlemleniyor. Ekonometrik modeller
+            st.write(f"📉 Negatif bir seyir hakim. Destek seviyeleri takip edilmelidir.")
+
+    # --- RİSKE MARUZ DEĞER (VaR) ---
+    st.error(f"⚠️ **Kayıp Analizi:** 100 TL'lik bir yatırımda, bir günde matematiksel olarak beklenen max kayıp: {abs(np.percentile(returns, 5)*100):.2f} TL")
+
+else:
+    st.error(f"❌ '{input_symbol}' verisi çekilemedi. Lütfen sembolü kontrol edin.")
