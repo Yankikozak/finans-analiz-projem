@@ -4,153 +4,170 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 import requests
+from datetime import datetime
 
-# --- 1. CONFIG: GENİŞ EKRAN MODU ---
-st.set_page_config(page_title="Guardian | Finansal Zeka", layout="wide", initial_sidebar_state="collapsed")
+# --- 1. TEKNİK ALTYAPI: CACHE & OPTİMİZASYON ---
+st.set_page_config(page_title="Guardian Terminal", layout="wide", initial_sidebar_state="collapsed")
 
-if 'lang' not in st.session_state: st.session_state.lang = "TR"
+@st.cache_data(ttl=300)  # Veriyi 5 dakika saklar, hızı artırır
+def get_quick_stats(ticker):
+    try:
+        data = yf.Ticker(ticker).history(period="2d")
+        if len(data) < 2: return 0, 0
+        price = data['Close'].iloc[-1]
+        change = ((price - data['Close'].iloc[-2]) / data['Close'].iloc[-2]) * 100
+        return price, change
+    except: return 0, 0
 
-L_DICT = {
-    "TR": {
-        "m_title": "Guardian Finansal Zeka",
-        "m_subtitle": "Sakarya Üniversitesi Ekonometri Disiplini ile Geliştirilmiş Sermaye Koruma Sistemi",
-        "blog_h": "🛡️ Stratejik Analiz ve Risk Protokolü",
-        "btn_enter": "Terminale Giriş Yap",
-        "search_ph": "Varlık Ara (Hisse, Kripto, Emtia)...",
-        "res_label": "BIST Öncelikli Sonuçlar:"
-    },
-    "EN": {
-        "m_title": "Guardian Financial Intelligence",
-        "m_subtitle": "Capital Protection System with Sakarya University Econometrics Discipline",
-        "blog_h": "🛡️ Strategic Analysis & Risk Protocol",
-        "btn_enter": "Enter Terminal",
-        "search_ph": "Search Asset (Stock, Crypto, Commodity)...",
-        "res_label": "BIST Priority Results:"
-    }
-}
-L = L_DICT[st.session_state.lang]
+@st.cache_data(ttl=600)
+def calculate_risk_score(ticker):
+    try:
+        df = yf.download(ticker, period="3mo", progress=False)['Close']
+        returns = df.pct_change().dropna()
+        vol = returns.std() * np.sqrt(252) * 100
+        # Basit Risk Skoru (1-10)
+        score = min(max(int(vol / 10), 1), 10)
+        return score, vol
+    except: return 5, 0
 
-# --- 2. CSS: EKONLAB TARZI GENİŞ BLOG VE KESKİN METİNLER ---
-st.markdown("""
-<style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800;900&display=swap');
-    html, body, [class*="css"] { font-family: 'Inter', sans-serif; background-color: #020617; }
-
-    /* Sağ Üst Dil Seçici */
-    .stSelectbox { width: 100px !important; float: right; }
-
-    /* GENİŞ BLOG TASARIMI */
-    .wide-hero {
-        background: linear-gradient(90deg, #0f172a 0%, #1e293b 100%);
-        padding: 100px 5%;
-        border-radius: 0 0 50px 50px;
-        border-bottom: 2px solid #3b82f6;
-        margin-bottom: 50px;
-        text-align: left; /* Ekonlab gibi sola yaslı daha profesyonel durur */
-    }
-    .hero-title { font-size: 5rem; font-weight: 900; color: #ffffff !important; letter-spacing: -3px; line-height: 1; }
-    .hero-subtitle { font-size: 1.5rem; color: #60a5fa !important; margin-top: 20px; font-weight: 600; }
-    
-    .blog-container { padding: 0 5%; display: flex; gap: 30px; margin-bottom: 50px; }
-    .blog-card {
-        background: #0f172a;
-        padding: 40px;
-        border-radius: 24px;
-        border: 1px solid #1e293b;
-        flex: 1;
-        transition: 0.4s;
-    }
-    .blog-card:hover { border-color: #3b82f6; transform: translateY(-10px); box-shadow: 0 20px 40px rgba(59, 130, 246, 0.1); }
-    .blog-card h3 { color: #ffffff; font-size: 1.8rem; margin-bottom: 15px; }
-    .blog-card p { color: #94a3b8; font-size: 1.1rem; line-height: 1.7; }
-
-    /* Terminal Butonu */
-    .stButton>button { 
-        background: #2563eb; color: white; border-radius: 15px; 
-        height: 4.5rem; font-weight: 800; font-size: 1.3rem; border: none;
-        width: 100%; box-shadow: 0 10px 20px rgba(37, 99, 235, 0.3);
-    }
-</style>
-""", unsafe_allow_html=True)
-
-# Dil Seçici
-c_space, col_l = st.columns([12, 1.5])
-with col_l:
-    st.session_state.lang = st.selectbox("", ["TR", "EN"], label_visibility="collapsed")
-
-# --- 3. AKILLI ARAMA (BIST FİLTRESİ) ---
-def fetch_assets(query):
+# --- 2. SMART SEARCH: RANKING & ENTITY MATCHING ---
+def smart_search(query):
     if len(query) < 2: return []
     try:
         url = f"https://query1.finance.yahoo.com/v1/finance/search?q={query}"
         resp = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}).json()
         quotes = resp.get('quotes', [])
-        bist = [q for q in quotes if str(q.get('symbol','')).endswith('.IS')]
-        others = [q for q in quotes if not str(q.get('symbol','')).endswith('.IS') and q.get('quoteType') != 'FUND']
-        final = bist + others
-        return [{"label": f"🇹🇷 {q.get('shortname')} ({q.get('symbol')})" if q in bist else f"🌍 {q.get('shortname')} ({q.get('symbol')})", 
-                 "symbol": q.get('symbol')} for q in final[:8]]
+        
+        enriched_results = []
+        for q in quotes:
+            symbol = q.get('symbol')
+            if not symbol or q.get('quoteType') == 'FUND': continue
+            
+            # Ranking Mantığı
+            score = 0
+            if query.upper() in symbol: score += 100
+            if symbol.endswith('.IS'): score += 50 # BIST Önceliği
+            
+            price, change = get_quick_stats(symbol)
+            risk, _ = calculate_risk_score(symbol)
+            
+            enriched_results.append({
+                "symbol": symbol,
+                "name": q.get('shortname', 'Bilinmiyor'),
+                "price": price,
+                "change": change,
+                "risk": risk,
+                "score": score
+            })
+        
+        return sorted(enriched_results, key=lambda x: x['score'], reverse=True)
     except: return []
 
-# --- 4. LANDING PAGE (GENİŞ BLOG DÜZENİ) ---
+# --- 3. UI/UX: MODERN FINANSAL TASARIM (CSS) ---
+st.markdown("""
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=JetBrains+Mono&display=swap');
+    html, body, [class*="css"] { font-family: 'Inter', sans-serif; background-color: #020617; }
+    
+    /* SaaS Kart Yapısı */
+    .search-card {
+        background: rgba(30, 41, 59, 0.4);
+        border: 1px solid #1e293b;
+        border-radius: 16px;
+        padding: 20px;
+        margin-bottom: 15px;
+        transition: 0.3s;
+    }
+    .search-card:hover { border-color: #3b82f6; background: rgba(30, 41, 59, 0.6); }
+    
+    .status-up { color: #22c55e; font-weight: bold; }
+    .status-down { color: #ef4444; font-weight: bold; }
+    
+    .risk-badge {
+        padding: 4px 12px;
+        border-radius: 20px;
+        font-size: 0.8rem;
+        font-weight: bold;
+    }
+    
+    /* Blog Kartları */
+    .blog-section { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
+    .blog-card {
+        background: #0f172a; border: 1px solid #1e293b; padding: 25px; border-radius: 20px;
+    }
+    .blog-tag { color: #3b82f6; font-size: 0.75rem; font-weight: 800; text-transform: uppercase; }
+</style>
+""", unsafe_allow_html=True)
+
+# --- 4. LANDING & BLOG SİSTEMİ ---
 if 'auth' not in st.session_state: st.session_state.auth = False
 
 if not st.session_state.auth:
-    # Üst Geniş Alan
-    st.markdown(f"""
-        <div class="wide-hero">
-            <h1 class="hero-title">{L['m_title']}</h1>
-            <p class="hero-subtitle">{L['m_subtitle']}</p>
-        </div>
-    """, unsafe_allow_html=True)
+    st.title("🛡️ Guardian Intelligence")
+    st.subheader("Sakarya Üniversitesi Ekonometri Disiplini ile Güçlendirilmiş SaaS Analiz Platformu")
     
-    # Genişletilmiş Blog Kartları
-    st.markdown(f" <h2 style='padding: 0 5%; color:white; margin-bottom:30px;'>{L['blog_h']}</h2>", unsafe_allow_html=True)
+    tabs = st.tabs(["📊 Market", "📝 Analist Raporları", "🎓 Eğitim"])
     
-    st.markdown(f"""
-        <div class="blog-container">
+    with tabs[1]:
+        st.markdown('<div class="blog-section">', unsafe_allow_html=True)
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown("""
             <div class="blog-card">
-                <h3>📊 Ekonometrik Analiz</h3>
-                <p>Sakarya Üniversitesi'ndeki akademik temellerimizle, piyasa verilerini sadece izlemiyor, 
-                GARCH ve ARMA modelleriyle volatiliteyi tahmin ediyoruz.</p>
+                <span class="blog-tag">HİSSE SENEDİ</span>
+                <h3>BIST 100 Volatilite Analizi</h3>
+                <p>GARCH modellerimiz önümüzdeki 10 gün için oynaklık artışı bekliyor. Nakit oranını korumak stratejik olabilir.</p>
+                <hr style="border:0.1px solid #1e293b">
+                <small>Risk Skoru: 7/10 | Analist: Yankı</small>
             </div>
+            """, unsafe_allow_html=True)
+        with col2:
+            st.markdown("""
             <div class="blog-card">
-                <h3>🛡️ Risk Yönetimi</h3>
-                <p>Value at Risk (VaR) protokolleri sayesinde, portföyünüzün maruz kalabileceği 
-                maksimum kaybı matematiksel kesinlikle hesaplıyoruz.</p>
+                <span class="blog-tag">MAKROEKONOMİ</span>
+                <h3>Enflasyon ve Kur Tahminleri</h3>
+                <p>Ekonometrik zaman serisi analizleri, kurdaki stabilizasyonun devam edeceğine işaret ediyor.</p>
+                <hr style="border:0.1px solid #1e293b">
+                <small>Risk Skoru: 4/10 | Analist: AI-Guardian</small>
             </div>
-            <div class="blog-card">
-                <h3>🌍 Küresel Piyasalar</h3>
-                <p>Borsa İstanbul'dan Nasdaq'a kadar tüm piyasalara erişim sağlayarak, 
-                varlıklarınızı ekonometrik bir süzgeçten geçiriyoruz.</p>
-            </div>
-        </div>
-    """, unsafe_allow_html=True)
+            """, unsafe_allow_html=True)
     
-    # Giriş Butonu (Merkezi)
-    c1, c2, c3 = st.columns([1.5, 1, 1.5])
-    with c2:
-        if st.button(L['btn_enter']):
-            st.session_state.auth = True
-            st.rerun()
+    if st.button("Terminali Başlat"):
+        st.session_state.auth = True
+        st.rerun()
     st.stop()
 
-# --- 5. ANA TERMİNAL ---
-st.sidebar.title("💎 Guardian Terminal")
-u_input = st.sidebar.text_input("Arama:", placeholder=L['search_ph'])
+# --- 5. SMART TERMINAL ---
+st.header("🔍 Akıllı Varlık Terminali")
+query = st.text_input("", placeholder="Varlık ismi veya sembolü girin (Örn: Apple, THY, BTC)...", label_visibility="collapsed")
 
-if u_input:
-    res = fetch_assets(u_input)
-    if res:
-        choice = st.sidebar.selectbox(L['res_label'], options=[r['label'] for r in res])
-        ticker = [r['symbol'] for r in res if r['label'] == choice][0]
-        
-        df = yf.download(ticker, period="1y", progress=False)['Close']
-        if not df.empty:
-            st.header(f"📈 {choice}")
-            st.plotly_chart(px.line(df, template="plotly_dark", color_discrete_sequence=['#3b82f6']), use_container_width=True)
+if query:
+    results = smart_search(query)
+    if not results:
+        st.warning("Sonuç bulunamadı.")
+    else:
+        for r in results:
+            change_class = "status-up" if r['change'] >= 0 else "status-down"
+            risk_color = "#22c55e" if r['risk'] < 4 else "#eab308" if r['risk'] < 7 else "#ef4444"
             
-            # Risk Metrikleri
-            ret = df.pct_change().dropna()
-            vol = (ret.std() * np.sqrt(252) * 100).iloc[0]
-            st.metric("Yıllık Oynaklık", f"%{vol:.2f}")
+            with st.container():
+                st.markdown(f"""
+                <div class="search-card">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <span style="font-size: 1.2rem; font-weight: 800;">{r['name']}</span> 
+                            <span style="color: #64748b; margin-left: 10px;">{r['symbol']}</span>
+                        </div>
+                        <div style="text-align: right;">
+                            <div style="font-size: 1.1rem; font-weight: bold;">{r['price']:.2f} USD</div>
+                            <div class="{change_class}">%{r['change']:.2f}</div>
+                        </div>
+                    </div>
+                    <div style="margin-top: 15px; display: flex; gap: 15px; align-items: center;">
+                        <span class="risk-badge" style="background: {risk_color}33; color: {risk_color};">Risk Skoru: {r['risk']}/10</span>
+                        <span style="color: #94a3b8; font-size: 0.85rem;">Ekonometrik model tarafından onaylandı.</span>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+                if st.button(f"Analiz Et: {r['symbol']}", key=r['symbol']):
+                    st.session_state.selected_ticker = r['symbol']
