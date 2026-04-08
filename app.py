@@ -3,86 +3,100 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 import plotly.express as px
-from scipy.stats import norm
+import plotly.graph_objects as go
 
-# --- CONFIG ---
-st.set_page_config(page_title="Guardian Finance | Risk Engine", layout="wide")
+# --- 1. MARKA KİMLİĞİ VE STİL ---
+st.set_page_config(page_title="Guardian Finance | Risk Control", layout="wide")
 
-class RiskEngine:
-    @staticmethod
-    def calculate_metrics(returns, weights):
-        # Yıllık getiri ve volatilite
-        port_ret = np.sum(returns.mean() * weights) * 252
-        port_vol = np.sqrt(np.dot(weights.T, np.dot(returns.cov() * 252, weights)))
-        
-        # VaR %95 (Parametrik)
-        var_95 = norm.ppf(1-0.95, port_ret/252, port_vol/np.sqrt(252))
-        
-        # Sharpe Ratio (Rf = %30 varsayıldı - TR piyasası için)
-        sharpe = (port_ret - 0.30) / port_vol
-        
-        return port_ret, port_vol, var_95, sharpe
+st.markdown("""
+    <style>
+    /* Stripe/Notion stili kartlar */
+    .metric-card {
+        background: #1a1c23;
+        border: 1px solid #2d3139;
+        padding: 24px;
+        border-radius: 16px;
+        text-align: center;
+    }
+    .risk-high { color: #ff4b4b; border-bottom: 4px solid #ff4b4b; }
+    .risk-mid { color: #ffa500; border-bottom: 4px solid #ffa500; }
+    .risk-low { color: #00ff00; border-bottom: 4px solid #00ff00; }
+    </style>
+    """, unsafe_allow_html=True)
 
-# --- UI HEADER ---
-st.title("🛡️ Guardian Finance: Loss Mitigation Engine")
-st.markdown("---")
+# --- 2. DEĞER ÖNERİSİ (LANDING) ---
+if 'active' not in st.session_state:
+    st.session_state.active = False
 
-# --- DATA & SESSION ---
-if 'view' not in st.session_state: st.session_state.view = 'demo'
-
-# --- SIDEBAR: ASSET MANAGEMENT ---
-with st.sidebar:
-    st.header("📂 Portföy Yapılandırma")
-    mode = st.toggle("Kendi Portföyüm", value=False)
+if not st.session_state.active:
+    st.title("🛡️ Yatırımlarını Şansa Bırakma.")
+    st.subheader("Guardian, ekonometrik modellerle portföyündeki 'kara delikleri' tespit eder.")
     
-    if not mode:
-        st.info("Demo Portföy: THY, Altın, Bitcoin, Ereğli")
-        assets = ["THYAO.IS", "GC=F", "BTC-USD", "EREGL.IS"]
-        weights = np.array([0.3, 0.3, 0.1, 0.3])
+    st.markdown("""
+    - **Karar Ver:** "Ne yapmalıyım?" sorusuna AI destekli yanıtlar al.
+    - **Kayıp Kontrolü:** Piyasa krizlerini önceden simüle et.
+    - **Güven:** Akademik risk modelleriyle sermayeni koru.
+    """)
+    
+    if st.button("Ücretsiz Analize Başla (Demo Portföy)"):
+        st.session_state.active = True
+        st.rerun()
+    st.stop()
+
+# --- 3. AKILLI ANALİZ MOTORU ---
+def get_ai_advice(score, var_val):
+    if score > 7:
+        return "🚨 **KRİTİK:** Portföyün çok agresif. Bir çöküş durumunda telafisi zor yaralar alabilirsin. **Öneri:** Hisse ağırlığını %20 azaltıp altına geç.", "risk-high"
+    elif score > 4:
+        return "⚠️ **DİKKAT:** Orta düzey risk. Piyasa dalgalanmaları seni sarsabilir. **Öneri:** Stop-loss seviyelerini güncelle.", "risk-mid"
     else:
-        raw = st.text_input("Varlıklar (Virgül):", "AAPL, TSLA, BTC-USD")
-        assets = [x.strip() for x in raw.split(",")]
-        weights = np.array([1/len(assets)] * len(assets))
+        return "✅ **GÜVENLİ:** Portföyün dengeli. Mevcut stratejini koruyabilirsin.", "risk-low"
 
-# --- CORE ENGINE EXECUTION ---
+# --- 4. ANA DASHBOARD ---
+st.sidebar.title("💎 Guardian Pro")
+mode = st.sidebar.radio("Mod", ["Demo Portföy", "Kendi Portföyüm (Pro)"])
+
+# Demo Verileri
+assets = ["THYAO.IS", "BTC-USD", "GC=F", "EREGL.IS"]
+weights = np.array([0.4, 0.2, 0.2, 0.2])
+
 try:
-    data = yf.download(assets, period="1y")['Close'].ffill()
-    returns = data.pct_change().dropna()
-    
-    engine = RiskEngine()
-    ann_ret, ann_vol, var_val, sharpe = engine.calculate_metrics(returns, weights)
+    with st.spinner('Piyasa verileri analiz ediliyor...'):
+        data = yf.download(assets, period="1y", progress=False)['Close']
+        returns = data.pct_change().dropna()
+        port_ret = (returns * weights).sum(axis=1)
+        cum_ret = (1 + port_ret).cumprod()
+        
+        # Metrikler
+        vol = port_ret.std() * np.sqrt(252) * 100
+        risk_score = min(10.0, vol / 4)
+        var_95 = np.percentile(port_ret, 5) * 100
+        
+        advice, color_class = get_ai_advice(risk_score, var_95)
 
-    # --- DASHBOARD ---
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Beklenen Yıllık Getiri", f"%{ann_ret*100:.1f}")
-    col2.metric("Sistemik Risk (Vol)", f"%{ann_vol*100:.1f}")
-    col3.metric("Max Günlük Kayıp (VaR)", f"%{abs(var_val)*100:.2f}")
-    col4.metric("Sharpe Oranı", f"{sharpe:.2f}")
+        # --- GÖRSEL HİYERARŞİ: SONUÇ EKRANI ---
+        st.markdown(f"<h1 style='text-align: center;' class='{color_class}'>Risk Skoru: {risk_score:.1f} / 10</h1>", unsafe_allow_html=True)
+        st.markdown(f"<div style='text-align: center; font-size: 1.2rem; margin-bottom: 40px;'>{advice}</div>", unsafe_allow_html=True)
 
-    # --- ACTIONABLE INTELLIGENCE (EN KRİTİK NOKTA) ---
-    st.markdown("### 🤖 Guardian AI: Karar Önerileri")
-    advice_col, alert_col = st.columns(2)
-    
-    with advice_col:
-        if ann_vol > 0.4:
-            st.error("🚨 **KRİTİK UYARI:** Portföy volatilite eşiği %40'ı aştı. Kripto veya yan tahta hisse ağırlığını %10 azaltıp emtiaya geçiş önerilir.")
-        elif sharpe < 1:
-            st.warning("⚠️ **VERİMSİZLİK:** Aldığın risk başına kazancın düşük. Korelasyonu yüksek varlıkları (Örn: Hepsi teknoloji) ayrıştırmalısın.")
-        else:
-            st.success("✅ **OPTIMAL:** Risk/Getiri dengeniz profesyonel standartlarda. Pozisyon koru.")
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Yıllık Oynaklık", f"%{vol:.2f}")
+        with col2:
+            st.metric("Maksimum Günlük Kayıp", f"%{abs(var_95):.2f}")
+        with col3:
+            st.metric("Kriz Dayanıklılığı", "Düşük" if risk_score > 6 else "Yüksek")
 
-    with alert_col:
-        crash_impact = ann_vol * -1.28  # Basit stres katsayısı
-        st.info(f"🧪 **Kriz Projeksiyonu:** Olası bir piyasa krizinde portföyün tahmini kaybı: **%{abs(crash_impact)*100:.1f}**. Nakit rezervin bu tutarı karşılamalı.")
+        # --- WOW EFFECT: KRİZ SİMÜLASYONU ---
+        st.divider()
+        st.subheader("🧪 Kriz Simülasyonu: '2008 Benzeri Çöküş'")
+        crash_impact = abs(var_95 * 4.5) # Basit kriz katsayısı
+        
+        c_col1, c_col2 = st.columns([1, 2])
+        with c_col1:
+            st.error(f"Bu senaryoda tahmini kaybın: **%{crash_impact:.1f}**")
+            st.write("Eğer bu kayıp seni rahatsız ediyorsa, portföy yapını 'Defansif' moda geçirmelisin.")
+        with c_col2:
+            st.plotly_chart(px.line(cum_ret, title="Performans Geçmişi", template="plotly_dark"), use_container_width=True)
 
-    # --- VISUALS ---
-    st.plotly_chart(px.line((1+returns.dot(weights)).cumprod(), title="Hedge Edilmemiş Performans"), use_container_width=True)
-
-except Exception as e:
-    st.error(f"Veri bağlantı hatası: {e}")
-
-# --- MONETIZATION HOOK ---
-st.markdown("---")
-if st.button("🚀 Detaylı Monte Carlo Analizi ve PDF Raporu Al (PREMIUM)"):
-    st.balloons()
-    st.toast("Premium abonelik sistemine yönlendiriliyorsunuz...")
+except:
+    st.error("Veri bağlantısı kurulamadı.")
