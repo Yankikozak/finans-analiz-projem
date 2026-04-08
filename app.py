@@ -5,118 +5,114 @@ import numpy as np
 import plotly.express as px
 from datetime import datetime, timedelta
 
-# --- PROFESYONEL SAYFA AYARLARI ---
-st.set_page_config(page_title="Portfolio Intelligence | Karar Destek Sistemi", layout="wide")
+# --- 1. KURUMSAL YAPILANDIRMA ---
+st.set_page_config(page_title="Risk Control Terminal | Finansal Karar Sistemi", layout="wide")
 
-# --- CUSTOM CSS (Ürün Hissi İçin) ---
+# Modern UI Tasarımı
 st.markdown("""
     <style>
-    .stMetric { background-color: #111418; border-radius: 12px; padding: 20px; border: 1px solid #1f2937; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
-    .stButton>button { width: 100%; border-radius: 8px; height: 3em; background-color: #2563eb; color: white; font-weight: bold; }
-    .reportview-container { background: #0b0e11; }
+    .stMetric { background-color: #111418; border-radius: 12px; padding: 20px; border: 1px solid #1f2937; }
+    .stButton>button { width: 100%; border-radius: 8px; height: 3em; background-color: #2563eb; color: white; }
+    .status-box { padding: 20px; border-radius: 10px; margin-bottom: 20px; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 1. DEĞER ÖNERİSİ & LANDING (GİRİŞ) ---
-if 'started' not in st.session_state:
-    st.session_state.started = False
+# --- 2. GİRİŞ DENEYİMİ (LANDING & DEMO) ---
+if 'view' not in st.session_state:
+    st.session_state.view = 'landing'
 
-if not st.session_state.started:
-    st.title("🛡️ Yatırımlarını Şansa Bırakma.")
-    st.subheader("Veri Bilimi ve Ekonometrik Modellerle Portföyünü Optimize Et.")
+if st.session_state.view == 'landing':
+    st.title("🛡️ Portföyünü Şansa Değil, Matematiğe Emanet Et.")
+    st.subheader("Kayıpları minimize eden, ekonometrik tabanlı karar destek sistemi.")
     
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        st.markdown("### 📊 Akıllı Analiz\nSıradan grafiklerin ötesine geç, risklerini matematiksel olarak ölç.")
-    with c2:
-        st.markdown("### 🤖 AI Stratejist\nKarmaşık verileri senin için yorumlayan ve aksiyon öneren yapay zeka.")
-    with c3:
-        st.markdown("### 📉 Kayıp Kontrolü\nPiyasa çöküşlerinde ne kadar kaybedebileceğini önceden bil.")
+    col_a, col_b, col_c = st.columns(3)
+    with col_a:
+        st.info("### 📉 Kayıp Kontrolü\nPotansiyel çöküş senaryolarını önceden simüle edin.")
+    with col_b:
+        st.success("### ⚖️ Akıllı Denge\nRisk skoru yüksek varlıklar için anında aksiyon önerileri alın.")
+    with col_c:
+        st.warning("### 🧠 AI Stratejist\nKarmaşık verileri rasyonel yatırım kararlarına dönüştürün.")
     
     st.markdown("---")
-    if st.button("Ücretsiz Analize Başla →"):
-        st.session_state.started = True
+    if st.button("Hemen Demo Portföyü İncele →"):
+        st.session_state.mode = 'Demo'
+        st.session_state.view = 'app'
         st.rerun()
     st.stop()
 
-# --- 2. VARLIK SÖZLÜĞÜ ---
-asset_db = {
+# --- 3. AKILLI VERİ SÖZLÜĞÜ ---
+asset_library = {
     "THYAO": "THYAO.IS", "ASELS": "ASELS.IS", "EREGL": "EREGL.IS", "TUPRS": "TUPRS.IS",
     "BTC": "BTC-USD", "ETH": "ETH-USD", "GOLD": "GC=F", "SILVER": "SI=F", "NASDAQ": "^IXIC"
 }
 
-# --- 3. ANA PANEL ---
-st.sidebar.title("💎 Intelligence Panel")
-menu = st.sidebar.selectbox("Menü", ["Varlık Analiz Merkezi", "Portföy Strateji Odası", "Metodoloji & Güven"])
+# --- 4. SIDEBAR & PORTFÖY GİRİŞİ ---
+st.sidebar.title("💎 Terminal Kontrol")
+app_mode = st.sidebar.radio("Çalışma Modu", ["Demo Portföy", "Kendi Portföyünü Oluştur"])
 
-# --- MODÜL 1: ANALİZ MERKEZİ ---
-if menu == "Varlık Analiz Merkezi":
-    st.header("🔍 Akıllı Varlık Sorgulama")
-    query = st.text_input("Hisse veya Kripto Yazın (Örn: THYAO, BTC, GOLD)", "THYAO")
+if app_mode == "Demo Portföy":
+    selected_assets = ["THYAO", "GOLD", "BTC"]
+    st.sidebar.success("Şu an 'Dengeli Demo Portföy' aktif.")
+else:
+    p_input = st.sidebar.text_input("Varlık Kodları (Virgülle):", "THYAO, EREGL, BTC")
+    selected_assets = [x.strip().upper() for x in p_input.split(",")]
+
+# --- 5. ANALİZ MOTORU ---
+def run_analysis(assets):
+    tickers = [asset_library.get(x, f"{x}.IS" if "." not in x else x) for x in assets]
+    data = yf.download(tickers, period="1y", progress=False)['Close']
+    if data.empty: return None
     
-    ticker = asset_db.get(query.upper(), f"{query.upper()}.IS" if "." not in query else query)
+    returns = data.pct_change().dropna()
+    weights = np.array([1/len(assets)] * len(assets))
+    port_daily = (returns * weights).sum(axis=1)
+    port_cum = (1 + port_daily).cumprod()
     
-    data = yf.download(ticker, period="1y", progress=False)['Close']
-    if not data.empty:
-        if isinstance(data, pd.Series): data = data.to_frame()
-        
-        col_m1, col_m2, col_m3 = st.columns(3)
-        ret = ((data.iloc[-1] / data.iloc[0]) - 1).values[0] * 100
-        vol = (data.pct_change().std() * np.sqrt(252)).values[0] * 100
-        
-        col_m1.metric("Son Fiyat", f"{data.iloc[-1].values[0]:.2f}")
-        col_m2.metric("Yıllık Getiri", f"%{ret:.2f}")
-        col_m3.metric("Oynaklık (Risk)", f"%{vol:.2f}")
-        
-        st.plotly_chart(px.line(data, template="plotly_dark", title=f"{ticker} Trend"), use_container_width=True)
-        
-        # WOW EFFECT: AI YORUM
-        st.subheader("🤖 AI Analist Yorumu")
-        if vol > 35:
-            st.error(f"**Yüksek Risk Uyarısı:** {ticker} varlığı çok agresif hareket ediyor. Portföydeki ağırlığı %15'i geçmemeli.")
-        elif ret < 0:
-            st.warning(f"**Dip Arayışı:** {ticker} negatif trendde. Ekonometrik modeller 'bekle-gör' sinyali veriyor.")
+    return port_daily, port_cum, data
+
+result = run_analysis(selected_assets)
+
+if result:
+    port_daily, port_cum, raw_data = result
+    
+    # --- 6. RİSK METRİKLERİ ---
+    m1, m2, m3, m4 = st.columns(4)
+    total_ret = (port_cum.iloc[-1] - 1) * 100
+    vol = port_daily.std() * np.sqrt(252) * 100
+    dd = ((port_cum / port_cum.cummax()) - 1).min() * 100
+    var_95 = np.percentile(port_daily, 5) * 100 # %95 güvenle max günlük kayıp
+
+    m1.metric("Toplam Getiri", f"%{total_ret:.2f}")
+    m2.metric("Risk Skoru (1-10)", f"{min(10, vol/5):.1f}")
+    m3.metric("Maksimum Düşüş", f"%{dd:.2f}")
+    m4.metric("Günlük VaR (%95)", f"%{abs(var_95):.2f}")
+
+    # --- 7. SENARYO SİMÜLASYONU (STRES TESTİ) ---
+    st.markdown("---")
+    st.subheader("🧪 Stres Testi: %10 Piyasa Çöküş Senaryosu")
+    market_crash = -10.0
+    impact = market_crash * (vol / 18) # Beta korelasyon tahmini
+    st.error(f"**Analiz:** Piyasa genelinde yaşanacak %10'luk bir çöküşte, portföyünün tahmini kaybı: **%{abs(impact):.2f}**")
+
+    # --- 8. KARAR VERDİREN AKSİYON ÖNERİLERİ ---
+    st.markdown("---")
+    col_x, col_y = st.columns(2)
+    
+    with col_x:
+        st.subheader("🥧 Varlık Dağılımı")
+        st.plotly_chart(px.pie(values=[1/len(selected_assets)]*len(selected_assets), names=selected_assets, hole=0.5), use_container_width=True)
+    
+    with col_y:
+        st.subheader("🎯 Stratejik Aksiyon Planı")
+        if abs(var_95) > 3.0:
+            st.warning("⚠️ **RİSK UYARISI:** Günlük kayıp potansiyelin (VaR) kritik eşikte. Portföydeki yüksek volatil varlıkları (Kripto/Agresif Hisse) azaltıp, ALTIN veya NAKİT ağırlığını %20 artırman önerilir.")
+        elif total_ret < -5:
+            st.info("ℹ️ **MALİYET DÜŞÜRME:** Portföy negatif bölgede. Ekonometrik trend dönüşü için destek seviyeleri beklenmeli, kademeli alım stratejisi izlenmeli.")
         else:
-            st.success(f"**Pozitif Momentum:** Trend güçlü. Mevcut pozisyonlar stratejik hedefler doğrultusunda tutulabilir.")
+            st.success("✅ **STABİL:** Portföy yapısı şu an piyasa koşullarına uyumlu. Mevcut ağırlıkları bozmadan kâr hedefleri takip edilebilir.")
 
-# --- MODÜL 2: PORTFÖY STRATEJİSİ ---
-elif menu == "Portföy Strateji Odası":
-    st.header("📂 Stratejik Portföy Yönetimi")
-    p_input = st.sidebar.multiselect("Varlık Seçin", list(asset_db.keys()), default=["THYAO", "GOLD"])
-    
-    if p_input:
-        tickers = [asset_db[x] for x in p_input]
-        p_data = yf.download(tickers, period="1y", progress=False)['Close']
-        
-        if not p_data.empty:
-            p_ret = p_data.pct_change().dropna()
-            weights = np.array([1/len(p_input)]*len(p_input))
-            port_daily = (p_ret * weights).sum(axis=1)
-            port_cum = (1 + port_daily).cumprod()
-            
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Portföy Getirisi", f"%{(port_cum.iloc[-1]-1)*100:.2f}")
-            c2.metric("Max Kayıp (DD)", f"%{((port_cum / port_cum.cummax()) - 1).min()*100:.2f}")
-            c3.metric("Günlük VaR", f"%{abs(np.percentile(port_daily, 5)*100):.2f}")
-            
-            st.plotly_chart(px.line(port_cum, title="Strateji Performansı", template="plotly_dark"), use_container_width=True)
-            
-            # KARAR VERDİREN SİSTEM (AKSİYON ÖNERİSİ)
-            st.markdown("### 🎯 Stratejik Aksiyon Planı")
-            if abs(np.percentile(port_daily, 5)*100) > 3:
-                st.markdown("> 🔴 **KRİTİK:** Portföyün günlük kayıp riski çok yüksek. Nakit veya Altın ağırlığını artırarak 'hedge' yapmalısın.")
-            else:
-                st.markdown("> 🟢 **GÜVENLİ:** Portföy dağılımı stabil. Mevcut yapıyı bozmadan orta vadeli hedeflere odaklanabilirsin.")
+    # --- 9. PERFORMANS GRAFİĞİ ---
+    st.plotly_chart(px.line(port_cum, title="Performans Takip Çizelgesi", template="plotly_dark"), use_container_width=True)
 
-# --- MODÜL 3: GÜVEN & METODOLOJİ ---
-elif menu == "Metodoloji & Güven":
-    st.header("🛡️ Şeffaflık ve Metodoloji")
-    st.write("""
-    **Bu panel nasıl çalışıyor?**
-    Analizlerimizde Yahoo Finance üzerinden alınan gerçek zamanlı veriler kullanılır. 
-    Risk skorları, **Modern Portföy Teorisi (MPT)** ve **Riske Maruz Değer (VaR)** modelleriyle hesaplanır.
-    
-    **Geliştirici Künyesi:**
-    Bu proje, Sakarya Üniversitesi Ekonometri Bölümü öğrencisi **Yankı** tarafından, akademik verilerin finansal okuryazarlığa dönüştürülmesi amacıyla geliştirilmiştir.
-    """)
-    st.info("⚠️ Not: Bu bir yatırım tavsiyesi değil, istatistiksel bir simülasyon aracıdır.")
+else:
+    st.warning("Veri çekilemedi, lütfen sembolleri kontrol edin.")
