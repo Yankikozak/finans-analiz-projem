@@ -8,115 +8,122 @@ from datetime import datetime, timedelta
 # Sayfa Yapılandırması
 st.set_page_config(page_title="Risk & Portföy Analiz Terminali", layout="wide")
 
-# Tasarım İyileştirmeleri
-st.markdown("""
-    <style>
-    .stMetric { background-color: #161b22; border-radius: 10px; padding: 15px; border: 1px solid #30363d; }
-    </style>
-    """, unsafe_allow_html=True)
+# --- GELİŞMİŞ SEMBOL SÖZLÜĞÜ (Arama Motoru Çekirdeği) ---
+# Kullanıcı ne yazarsa yazsın, sistem Yahoo Finance diline çevirir.
+search_engine_db = {
+    # Borsa İstanbul (Popülerler)
+    "ASELSAN": "ASELS.IS", "THY": "THYAO.IS", "TÜPRAŞ": "TUPRS.IS", "EREĞLİ": "EREGL.IS",
+    "ŞİŞECAM": "SISE.IS", "KOÇ HOLDİNG": "KCHOL.IS", "SASA": "SASA.IS", "HEKTAŞ": "HEKTS.IS",
+    "GARANTİ": "GARAN.IS", "AKBANK": "AKBNK.IS", "BİM": "BIMAS.IS", "FORD": "FROTO.IS",
+    # Kripto Dünyası
+    "BITCOIN": "BTC-USD", "ETHEREUM": "ETH-USD", "SOLANA": "SOL-USD", "RIPPLE": "XRP-USD",
+    "DOGE": "DOGE-USD", "AVAX": "AVAX-USD", "BINANCE": "BNB-USD",
+    # Küresel Piyasalar & Emtia
+    "ALTIN": "GC=F", "GÜMÜŞ": "SI=F", "PETROL": "CL=F", "NASDAQ": "^IXIC", "S&P500": "^GSPC",
+    "APPLE": "AAPL", "TESLA": "TSLA", "NVIDIA": "NVDA", "GOOGLE": "GOOGL", "AMAZON": "AMZN"
+}
 
-# Başlık Güncellemesi
+def smart_search(input_text):
+    """Kullanıcının yazdığı metni teknik sembole dönüştürür."""
+    clean_input = input_text.upper().strip()
+    # 1. Sözlükte tam eşleşme var mı? (Örn: "Altın")
+    if clean_input in search_engine_db:
+        return search_engine_db[clean_input]
+    
+    # 2. Teknik kod mu yazdı? (Örn: "BTC", "THYAO")
+    crypto_list = ["BTC", "ETH", "SOL", "XRP", "AVAX", "DOGE"]
+    if clean_input in crypto_list:
+        return f"{clean_input}-USD"
+    
+    # 3. Bist kontrolü (Nokta yoksa .IS ekle)
+    if "." not in clean_input and "-" not in clean_input:
+        return f"{clean_input}.IS"
+    
+    return clean_input
+
+# --- UI BAŞLIĞI ---
 st.title("🛡️ Risk & Portföy Analiz Terminali")
 st.markdown("_Veriye dayalı finansal karar destek sistemi_")
 st.markdown("---")
 
-# --- GENİŞ VARLIK KÜTÜPHANESİ ---
-asset_library = {
-    # Borsa İstanbul
-    "THYAO": "THYAO.IS", "EREGL": "EREGL.IS", "ASELS": "ASELS.IS", "SISE": "SISE.IS", 
-    "TUPRS": "TUPRS.IS", "KCHOL": "KCHOL.IS", "AKBNK": "AKBNK.IS", "GARAN": "GARAN.IS",
-    "SASAS": "SASA.IS", "HEKTS": "HEKTS.IS", "BIMAS": "BIMAS.IS", "FROTO": "FROTO.IS",
-    # Kripto Paralar
-    "BTC": "BTC-USD", "ETH": "ETH-USD", "SOL": "SOL-USD", "AVAX": "AVAX-USD", "XRP": "XRP-USD",
-    # ABD Borsaları & Emtia
-    "APPLE": "AAPL", "TESLA": "TSLA", "AMAZON": "AMZN", "NVIDIA": "NVDA", "GOLD": "GC=F", "SILVER": "SI=F"
-}
+# --- SIDEBAR: ARAMA MOTORU ---
+st.sidebar.header("🔍 Akıllı Arama & Portföy")
 
-# --- SIDEBAR ---
-st.sidebar.header("📂 Portföy Yönetimi")
-mode = st.sidebar.radio("Çalışma Modu:", ["Hazır Demo Portföy", "Kendi Portföyünü Oluştur"])
+# Çoklu Seçim Menüsü (Hazır popüler varlıklar)
+suggestions = list(search_engine_db.keys())
+selected_from_list = st.sidebar.multiselect(
+    "Popüler Varlıklardan Seçin:",
+    options=suggestions,
+    default=["THY", "BITCOIN", "ALTIN"]
+)
 
-if mode == "Hazır Demo Portföy":
-    selected_assets = ["THYAO.IS", "EREGL.IS", "BTC-USD", "GC=F"]
-    st.sidebar.info("Örnek 'Dengeli Portföy' (THY, Ereğli, Bitcoin, Altın) inceleniyor.")
-else:
-    raw_input = st.sidebar.text_input("Varlık Kodları (Örn: THYAO, BTC, GOLD)", "THYAO, EREGL, BTC")
-    # Akıllı Sembol Dönüştürücü (Kullanıcı THYAO yazsa bile .IS ekler, BTC yazsa -USD ekler)
-    tickers_list = [t.strip().upper() for t in raw_input.split(",")]
-    selected_assets = []
-    for t in tickers_list:
-        if t in asset_library:
-            selected_assets.append(asset_library[t])
-        elif "." not in t and "-" not in t:
-            selected_assets.append(f"{t}.IS")
-        else:
-            selected_assets.append(t)
+# Manuel Giriş (Listede olmayanlar için)
+manual_input = st.sidebar.text_input("Veya farklı kodlar ekleyin (Virgülle):", "")
 
-days = st.sidebar.slider("Geçmiş Veri Aralığı (Gün)", 30, 1095, 365)
+# Nihai Sembol Listesini Oluşturma
+final_tickers = [search_engine_db[name] for name in selected_from_list]
+if manual_input:
+    extra_tickers = [smart_search(x) for x in manual_input.split(",") if x.strip()]
+    final_tickers.extend(extra_tickers)
+
+# Tekilleştirme (Aynı varlığın iki kez eklenmesini önler)
+final_tickers = list(set(final_tickers))
+
+days = st.sidebar.slider("Analiz Aralığı (Gün)", 30, 1095, 365)
 start_date = datetime.now() - timedelta(days=days)
 
-# --- VERİ ÇEKME ---
+# --- VERİ VE ANALİZ ---
 @st.cache_data
-def get_data(assets, start):
+def get_data(tickers, start):
     try:
-        df = yf.download(assets, start=start, progress=False)['Close']
+        df = yf.download(tickers, start=start, progress=False)['Close']
         if isinstance(df, pd.Series): df = df.to_frame()
         return df.ffill().dropna()
-    except:
-        return None
+    except: return None
 
-data = get_data(selected_assets, start_date)
-
-if data is not None and not data.empty and len(data) > 5:
-    returns = data.pct_change().dropna()
-    weights = np.array([1/len(selected_assets)] * len(selected_assets))
-    port_returns = (returns * weights).sum(axis=1)
-    cum_returns = (1 + port_returns).cumprod()
+if final_tickers:
+    data = get_data(final_tickers, start_date)
     
-    # --- METRİKLER ---
-    col1, col2, col3, col4 = st.columns(4)
-    total_ret = (cum_returns.iloc[-1] - 1) * 100
-    vol = port_returns.std() * np.sqrt(252) * 100
-    drawdown = ((cum_returns / cum_returns.cummax()) - 1).min() * 100
-    var_95 = np.percentile(port_returns, 5) * 100
+    if data is not None and not data.empty and len(data) > 5:
+        # Portföy Hesaplamaları
+        returns = data.pct_change().dropna()
+        weights = np.array([1/len(final_tickers)] * len(final_tickers))
+        port_returns = (returns * weights).sum(axis=1)
+        cum_returns = (1 + port_returns).cumprod()
+        
+        # Metrik Kartları
+        m1, m2, m3 = st.columns(3)
+        total_ret = (cum_returns.iloc[-1] - 1) * 100
+        vol = port_returns.std() * np.sqrt(252) * 100
+        drawdown = ((cum_returns / cum_returns.cummax()) - 1).min() * 100
+        
+        m1.metric("Toplam Getiri", f"%{total_ret:.2f}")
+        m2.metric("Risk Seviyesi", f"%{vol:.2f}")
+        m3.metric("Maksimum Kayıp", f"%{drawdown:.2f}")
 
-    col1.metric("Toplam Getiri", f"%{total_ret:.2f}")
-    col2.metric("Yıllık Volatilite", f"%{vol:.2f}")
-    col3.metric("Maksimum Kayıp", f"%{drawdown:.2f}")
-    col4.metric("Günlük VaR (%95)", f"%{abs(var_95):.2f}")
-
-    # --- GRAFİKLER ---
-    g1, g2 = st.columns([2, 1])
-    with g1:
-        st.subheader("Portföy Performans Trendi")
-        st.plotly_chart(px.line(cum_returns, template="plotly_dark"), use_container_width=True)
-    with g2:
-        st.subheader("Varlık Dağılımı") # Pasta sembolü kaldırıldı
-        st.plotly_chart(px.pie(values=weights, names=selected_assets, hole=0.4), use_container_width=True)
-
-    # --- SENARYO ANALİZİ ---
-    st.markdown("---")
-    st.subheader("Stres Testi: Piyasa Şoku Simülasyonu")
-    crash_impact = -10 * (vol / 18) 
-    st.error(f"Sistemik bir %10 piyasa düşüşünde, portföyün tahmini duyarlılığı: **%{abs(crash_impact):.2f}** kayıp yönlüdür.")
-
-    # --- PROFESYONEL STRATEJİ ANALİZİ ---
-    st.markdown("---")
-    st.subheader("Stratejik Portföy Yönetim Notları")
-    c_a, c_b = st.columns(2)
-    
-    with c_a:
-        st.info("### Risk Pozisyonu")
-        if vol > 25:
-            st.write("Mevcut portföy yapısı **agresif büyüme** odaklıdır. Volatilite katsayısı piyasa ortalamasının üzerindedir. Ani likidite ihtiyaçları için risk teşkil edebilir.")
-        else:
-            st.write("Portföy **defansif/dengeli** bir karaktere sahiptir. Sistemik risklere karşı direnç kapasitesi yüksektir.")
-
-    with c_b:
-        st.success("### Taktiksel Öneriler")
-        if abs(drawdown) > 20:
-            st.write("Maksimum kayıp oranı kritik eşiktedir. Riski stabilize etmek adına emtia veya sabit getirili varlık ağırlığının artırılması önerilir.")
-        else:
-            st.write("Portföy korelasyonu sağlıklı görünmektedir. Mevcut varlık dağılımı makroekonomik beklentilerle uyumlu korunabilir.")
+        # Ana Performans Grafiği
+        st.plotly_chart(px.line(cum_returns, title="Kümülatif Performans Trendi", template="plotly_dark"), use_container_width=True)
+        
+        # --- STRATEJİK ANALİZ VE ÖNERİLER ---
+        st.markdown("---")
+        st.subheader("💡 Stratejik Portföy Analizi")
+        
+        c_a, c_b = st.columns(2)
+        with c_a:
+            st.info("### 🧐 Risk Pozisyonu")
+            if vol > 25:
+                st.write("⚠️ **Agresif:** Portföy volatilite eşiği yüksek. Piyasa dalgalanmalarına karşı duyarlılık fazla.")
+            else:
+                st.write("✅ **Dengeli:** Risk dağılımı makul seviyelerde, defansif bir yapı korunuyor.")
+        
+        with c_b:
+            st.success("### 🎯 Taktiksel Öneri")
+            if total_ret > 0:
+                st.write("🚀 Mevcut trend pozitif. Belirlenen kâr hedefleri doğrultusunda pozisyonlar korunabilir.")
+            else:
+                st.write("📉 Negatif ayrışma gözleniyor. Maliyet düşürme veya varlık çeşitlendirme stratejileri değerlendirilmelidir.")
+            
+    else:
+        st.error("⚠️ Seçilen varlıklar için veri çekilemedi. Lütfen internet bağlantısını veya sembolleri kontrol edin.")
 else:
-    st.warning("⚠️ Veri çekilemedi. Lütfen varlık kodlarını (Örn: THYAO, BTC) kontrol edin veya Demo modunu kullanın.")
+    st.info("Lütfen sol menüden analiz etmek istediğiniz varlıkları seçin veya arama yapın.")
