@@ -6,103 +6,114 @@ import plotly.express as px
 from datetime import datetime, timedelta
 
 # Sayfa Yapılandırması
-st.set_page_config(page_title="Yankı Risk Paneli", layout="wide")
+st.set_page_config(page_title="Stratejik Portföy Terminali", layout="wide")
 
-st.title("🛡️ Yankı Finansal Risk & Portföy Analiz Terminali")
+# --- CSS: Tasarım İyileştirme ---
+st.markdown("""
+    <style>
+    .main { background-color: #0e1117; }
+    .stMetric { background-color: #161b22; border-radius: 10px; padding: 15px; border: 1px solid #30363d; }
+    </style>
+    """, unsafe_allow_html=True)
+
+# Başlık (İsim kaldırıldı, kurumsal kimlik eklendi)
+st.title("🛡️ Profesyonel Risk & Portföy Analiz Terminali")
+st.markdown("_Veriye dayalı finansal karar destek sistemi_")
 st.markdown("---")
 
-# --- KULLANICI DOSTU VARLIK LİSTESİ ---
-# Kullanıcı burada tanıdık isimler görecek, sistem arka planda Yahoo kodunu kullanacak.
-asset_dict = {
-    "ASELSAN (Bist)": "ASELS.IS",
-    "THY - Türk Hava Yolları (Bist)": "THYAO.IS",
-    "Bitcoin (Kripto)": "BTC-USD",
-    "Ethereum (Kripto)": "ETH-USD",
-    "Tüpraş (Bist)": "TUPRS.IS",
-    "Ereğli Demir Çelik (Bist)": "EREGL.IS",
-    "Şişecam (Bist)": "SISE.IS",
-    "Apple (ABD Borsası)": "AAPL",
-    "Tesla (ABD Borsası)": "TSLA",
-    "Altın (Ons/USD)": "GC=F",
-    "Gümüş (Ons/USD)": "SI=F"
-}
+# --- SIDEBAR: KULLANICI GİRİŞİ ---
+st.sidebar.header("📂 Portföy Yönetimi")
 
-# --- SIDEBAR: KOLAY SEÇİM ---
-st.sidebar.header("🔍 Varlık Seçimi")
-selected_display_name = st.sidebar.selectbox(
-    "Analiz etmek istediğiniz varlığı seçin:",
-    list(asset_dict.keys())
-)
+# 1. DEMO PORTFÖY SEÇENEĞİ (Login'siz anında deneyim)
+mode = st.sidebar.radio("Çalışma Modu:", ["Hazır Demo Portföy", "Kendi Portföyünü Oluştur"])
 
-# Seçilen isme karşılık gelen Yahoo sembolünü alıyoruz
-ticker = asset_dict[selected_display_name]
+if mode == "Hazır Demo Portföy":
+    # Örnek bir dengeli portföy
+    default_tickers = "THYAO, EREGL, BTC-USD, GOLD"
+    asset_dict = {"THYAO.IS": 0.3, "EREGL.IS": 0.3, "BTC-USD": 0.2, "GC=F": 0.2}
+    st.sidebar.info("Şu an örnek bir 'Dengeli Portföy' inceleniyor.")
+else:
+    raw_input = st.sidebar.text_input("Varlık Kodları (Virgülle ayırın)", "THYAO, EREGL, BTC")
+    # Ağırlık girişi (Basitlik için eşit ağırlık varsayıyoruz, geliştirilebilir)
+    tickers_list = [t.strip().upper() for t in raw_input.split(",")]
+    asset_dict = {f"{t}.IS" if "." not in t and "-" not in t else t: 1/len(tickers_list) for t in tickers_list}
 
-# Manuel arama yapmak isteyenler için opsiyonel kutu
-manual_input = st.sidebar.text_input("Veya farklı bir kod yazın (Örn: GARAN):")
-if manual_input:
-    ticker = manual_input.upper().strip()
-    if "." not in ticker and "-" not in ticker:
-        ticker = f"{ticker}.IS"
-
-st.sidebar.markdown("---")
-days = st.sidebar.slider("Analiz Süresi (Gün)", 30, 1095, 365)
+days = st.sidebar.slider("Geçmiş Veri Aralığı (Gün)", 30, 730, 365)
 start_date = datetime.now() - timedelta(days=days)
 
 # --- VERİ ÇEKME ---
 @st.cache_data
-def get_clean_data(t, start):
+def get_portfolio_data(assets, start):
     try:
-        df = yf.download(t, start=start, progress=False)['Close']
-        if df.empty: return None
-        if isinstance(df, pd.Series):
-            df = df.to_frame()
+        df = yf.download(list(assets.keys()), start=start, progress=False)['Close']
         return df.ffill().dropna()
     except:
         return None
 
-data = get_clean_data(ticker, start_date)
+data = get_portfolio_data(asset_dict, start_date)
 
-# --- PANEL GÖRÜNÜMÜ ---
-if data is not None and len(data) > 5:
-    price_col = data.iloc[:, 0]
-    returns = price_col.pct_change().dropna()
+if data is not None and not data.empty:
+    # Getiriler ve Portföy Hesaplama
+    returns = data.pct_change().dropna()
+    weights = np.array(list(asset_dict.values()))
     
-    # Hesaplamalar
-    total_ret = ((price_col.iloc[-1] / price_col.iloc[0]) - 1) * 100
-    vol = returns.std() * np.sqrt(252) * 100
-    risk_score = min(10, max(1, vol / 6))
+    # Portföy Günlük Getirisi
+    port_returns = (returns * weights).sum(axis=1)
+    cum_returns = (1 + port_returns).cumprod()
     
-    # Üst Bilgi Kartları
-    c1, c2, c3 = st.columns(3)
-    c1.metric("💰 Toplam Getiri", f"%{float(total_ret):.2f}")
-    c2.metric("📉 Risk Seviyesi", f"%{float(vol):.2f}")
-    c3.metric("📊 Risk Puanı", f"{float(risk_score):.1f} / 10")
+    # --- METRİKLER ---
+    col1, col2, col3, col4 = st.columns(4)
+    total_ret = (cum_returns.iloc[-1] - 1) * 100
+    vol = port_returns.std() * np.sqrt(252) * 100
+    drawdown = ((cum_returns / cum_returns.cummax()) - 1).min() * 100
+    var_95 = np.percentile(port_returns, 5) * 100
 
-    # Grafik
-    st.subheader(f"📈 {selected_display_name} Fiyat Analizi")
-    fig = px.line(data, template="plotly_dark", labels={'value': 'Fiyat', 'index': 'Tarih'})
-    st.plotly_chart(fig, use_container_width=True)
+    col1.metric("💰 Toplam Getiri", f"%{total_ret:.2f}")
+    col2.metric("📉 Yıllık Volatilite", f"%{vol:.2f}")
+    col3.metric("🌊 Max Düşüş", f"%{drawdown:.2f}")
+    col4.metric("🛡️ Günlük VaR (%95)", f"%{abs(var_95):.2f}")
 
-    # Akıllı Yorumlar
+    # --- GRAFİKLER ---
+    g1, g2 = st.columns([2, 1])
+    with g1:
+        st.subheader("📈 Portföy Performans Çizgisi")
+        st.plotly_chart(px.line(cum_returns, template="plotly_dark"), use_container_width=True)
+    with g2:
+        st.subheader("🥧 Varlık Dağılımı")
+        st.plotly_chart(px.pie(values=weights, names=list(asset_dict.keys()), hole=0.4), use_container_width=True)
+
+    # --- KRİTİK: SENARYO SİMÜLASYONU ---
     st.markdown("---")
-    st.subheader("💡 Yankı'nın Profesyonel Analizi")
-    col_a, col_b = st.columns(2)
+    st.subheader("🧪 Stres Testi: Piyasa Çöküş Senaryosu")
+    st.write("Eğer piyasa yarın birden %10 düşerse portföyün nasıl etkilenir?")
     
-    with col_a:
-        st.info("### 🧐 Risk Durumu")
-        if risk_score > 7:
-            st.write(f"⚠️ **Yüksek Risk:** {selected_display_name} şu an oldukça oynak. Büyük kazanç potansiyeli kadar sert düşüş riski de taşıyor.")
-        elif risk_score > 4:
-            st.write(f"⚖️ **Dengeli:** Standart bir piyasa varlığı gibi hareket ediyor.")
-        else:
-            st.write(f"🛡️ **Güvenli Liman:** Hareketleri oldukça sakin, portföyü dengelemek için ideal.")
+    crash_impact = -10 * (vol / 20) # Volatiliteye bağlı basit bir Beta tahmini
+    expected_loss = (100000 * crash_impact) / 100
+    
+    st.error(f"**Senaryo Sonucu:** %10'luk bir piyasa düşüşünde, 100.000 TL'lik yatırımında yaklaşık **{abs(expected_loss):,.0f} TL** kayıp yaşanabilir.")
 
-    with col_b:
-        st.success("### 📈 Performans Notu")
-        if total_ret > 0:
-            st.write(f"🚀 Bu varlık seçilen dönemde **%{total_ret:.2f}** kazandırmış. Yatırımcı güveni yüksek görünüyor.")
+    # --- KRİTİK: AKSİYON ÖNERİLERİ ---
+    st.markdown("---")
+    st.subheader("🎯 Yankı AI: Stratejik Aksiyon Önerileri")
+    
+    c_a, c_b = st.columns(2)
+    with c_a:
+        st.info("### 🧐 Risk Analizi")
+        if vol > 25:
+            st.write("⚠️ **Yüksek Risk:** Portföyün çok agresif. Bir varlığın sert düşüşü tüm portföyü eritebilir.")
         else:
-            st.write(f"📉 Bu dönemde **%{total_ret:.2f}** kaybettirmiş. Ekonometrik olarak bir toparlanma süreci beklenebilir.")
+            st.write("✅ **Dengeli:** Risk dağılımın sağlıklı görünüyor.")
+
+    with c_b:
+        st.success("### ⚡ Net Aksiyon Planı")
+        # Basit bir zeka algoritması
+        max_asset = list(asset_dict.keys())[np.argmax(weights)]
+        if vol > 30:
+            st.write(f"👉 **Aksiyon:** Risk çok yüksek! **{max_asset}** ağırlığını azaltıp Altın (GOLD) veya Nakit ekle.")
+        elif total_ret < -5:
+            st.write("👉 **Aksiyon:** Zarar kes (Stop-loss) seviyelerini kontrol et veya maliyet düşürmek için kademeli alım düşün.")
+        else:
+            st.write("👉 **Aksiyon:** Mevcut yapıyı koru. Portföyün piyasa koşullarına uyumlu.")
 
 else:
-    st.error(f"❌ '{ticker}' verisi çekilemedi. Piyasalar kapalı olabilir veya kod hatalıdır.")
+    st.warning("⚠️ Lütfen geçerli varlık kodları girin veya Demo moduna geçin.")
