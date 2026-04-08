@@ -59,15 +59,11 @@ languages = {
 if 'lang' not in st.session_state:
     st.session_state.lang = "TR"
 
+# CSS BLOK (SyntaxError burada çözüldü)
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
     html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
     
     .main-title { font-size: 3.5rem; font-weight: 800; color: #ffffff; text-align: center; margin-top: 2rem; }
-    .subtitle { font-size: 1.2rem; color: #ffffff; text-align: center; margin-bottom: 3rem; opacity: 0.8; }
-    
-    .trust-panel { 
-        background: linear-gradient(145deg, #111827, #1f2937); 
-        border: 1px solid #3b82f6; 
-        padding: 4rem
+    .subtitle { font-size: 1.2
