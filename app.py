@@ -5,153 +5,120 @@ import numpy as np
 import plotly.express as px
 import requests
 
-# --- 1. PRO KONFİGÜRASYON ---
-st.set_page_config(page_title="Guardian Market", layout="wide", initial_sidebar_state="collapsed")
+# --- 1. CONFIG ---
+st.set_page_config(page_title="Guardian | Finansal Zeka", layout="wide")
 
-# Dil Ayarları
 if 'lang' not in st.session_state: st.session_state.lang = "TR"
 
 L_DICT = {
     "TR": {
-        "title": "GUARDIAN MARKET",
-        "subtitle": "Piyasa Takip ve Ekonometrik Risk Terminali",
-        "search_label": "🔍 Varlık Ara (Hisse, Kripto, Emtia):",
-        "market_summary": "Piyasa Özeti",
-        "risk_score": "Risk Skoru",
-        "volatility": "Oynaklık",
-        "btn_enter": "Terminale Giriş",
-        "table_asset": "Varlık",
-        "table_price": "Fiyat",
-        "table_change": "Değişim (%)"
+        "m_title": "Guardian Finansal Zeka",
+        "m_subtitle": "Sakarya Üniversitesi Ekonometri Temelli Karar Mekanizması",
+        "b_title": "🛡️ Stratejik Analiz Paneli",
+        "b_feature_1": "Ekonometrik Disiplin",
+        "b_desc_1": "VaR ve GARCH modelleriyle sermayenizi matematiksel bir zırhla koruyun.",
+        "b_feature_2": "Global Erişim",
+        "b_desc_2": "BIST, Nasdaq ve Kripto piyasalarını tek bir terminalden yönetin.",
+        "btn_enter": "Terminale Giriş Yap",
+        "search_label": "🔍 Analiz Edilecek Varlık:",
+        "results_label": "Eşleşen Varlıklar (BIST Öncelikli):"
     },
     "EN": {
-        "title": "GUARDIAN MARKET",
-        "subtitle": "Market Watch & Econometric Risk Terminal",
-        "search_label": "🔍 Search Asset (Stock, Crypto, Commodity):",
-        "market_summary": "Market Summary",
-        "risk_score": "Risk Score",
-        "volatility": "Volatility",
+        "m_title": "Guardian Financial Intelligence",
+        "m_subtitle": "Decision Mechanism Based on Sakarya University Econometrics",
+        "b_title": "🛡️ Strategic Analysis Panel",
+        "b_feature_1": "Econometric Discipline",
+        "b_desc_1": "Protect your capital with a mathematical shield using VaR and GARCH models.",
+        "b_feature_2": "Global Access",
+        "b_desc_2": "Manage BIST, Nasdaq, and Crypto markets from a single terminal.",
         "btn_enter": "Enter Terminal",
-        "table_asset": "Asset",
-        "table_price": "Price",
-        "table_change": "Change (%)"
+        "search_label": "🔍 Asset to Analyze:",
+        "results_label": "Matching Assets (BIST Priority):"
     }
 }
-L = L_DICT[st.session_state.lang]
 
-# --- 2. CSS: EKONLAB ESİNTİLİ MODERN ARAYÜZ ---
+# --- 2. CSS: MAKSİMUM OKUNURLUK (OVERLAY SİSTEMİ) ---
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@400;700;900&display=swap');
-    
-    html, body, [class*="css"] { font-family: 'Inter', sans-serif; background-color: #0a0e17; color: #ffffff; }
-    
-    /* Üst Bar Tasarımı */
-    .market-header {
-        background: rgba(30, 41, 59, 0.5);
-        padding: 20px;
-        border-radius: 15px;
-        border-bottom: 2px solid #3b82f6;
-        margin-bottom: 30px;
-        text-align: center;
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
+    html, body, [class*="css"] { font-family: 'Inter', sans-serif; background-color: #030712; }
+    .stSelectbox { width: 90px !important; float: right; margin-top: -10px; }
+    .hero-container {
+        background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+        padding: 80px 50px; border-radius: 40px; border: 2px solid #3b82f6;
+        text-align: center; margin: 40px auto; max-width: 1000px;
+        box-shadow: 0 0 40px rgba(59, 130, 246, 0.2);
     }
-
-    /* Kart Yapısı (Ekonlab Tarzı) */
-    .metric-card {
-        background: #111827;
-        border: 1px solid #1f2937;
-        padding: 20px;
-        border-radius: 12px;
-        text-align: center;
-        transition: 0.3s;
-    }
-    .metric-card:hover { border-color: #3b82f6; background: #1e293b; }
-    .metric-value { font-family: 'JetBrains Mono', monospace; font-size: 1.8rem; font-weight: 700; color: #3b82f6; }
-    .metric-label { font-size: 0.9rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; }
-
-    /* Arama Çubuğu Özelleştirme */
-    .stTextInput>div>div>input {
-        background-color: #111827 !important;
-        color: white !important;
-        border: 1px solid #3b82f6 !important;
-        border-radius: 10px !important;
-    }
-    
-    /* Tablo Görünümü */
-    .stDataFrame { border: 1px solid #1f2937; border-radius: 10px; }
+    .hero-title { font-size: 4.5rem; font-weight: 900; color: #ffffff !important; letter-spacing: -2px; }
+    .hero-subtitle { font-size: 1.4rem; color: #94a3b8 !important; margin-bottom: 50px; }
+    .blog-card { background: rgba(255, 255, 255, 0.03); padding: 30px; border-radius: 24px; border: 1px solid #334155; text-align: left; }
+    .blog-card h4 { color: #60a5fa !important; font-size: 1.5rem; margin-top: 0; }
+    .blog-card p { color: #e2e8f0 !important; font-size: 1.1rem; line-height: 1.6; }
+    .stButton>button { background: #2563eb; color: white; border-radius: 12px; height: 4rem; font-weight: 800; font-size: 1.2rem; border: none; }
 </style>
 """, unsafe_allow_html=True)
 
-# Dil Seçimi
-c1, c2 = st.columns([10, 1])
-with c2:
-    st.session_state.lang = st.selectbox("", ["TR", "EN"], label_visibility="collapsed")
+col_space, col_l = st.columns([12, 1])
+with col_l:
+    st.session_state.lang = st.selectbox("", ["TR", "EN"], index=0 if st.session_state.lang == "TR" else 1, label_visibility="collapsed")
 
-# --- 3. AKILLI ARAMA VE VERİ ÇEKME ---
-def fetch_market_data(query):
+L = L_DICT[st.session_state.lang]
+
+# --- 3. AKILLI ARAMA (BIST FORCING) ---
+def fetch_assets(query):
+    if len(query) < 2: return []
     try:
         url = f"https://query1.finance.yahoo.com/v1/finance/search?q={query}"
         resp = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}).json()
         quotes = resp.get('quotes', [])
-        bist = [q for q in quotes if str(q.get('symbol','')).endswith('.IS')]
-        others = [q for q in quotes if not str(q.get('symbol','')).endswith('.IS') and q.get('quoteType') != 'FUND']
-        return bist + others
+        bist = [q for q in quotes if str(q.get('symbol', '')).endswith('.IS')]
+        others = [q for q in quotes if not str(q.get('symbol', '')).endswith('.IS') and q.get('quoteType') != 'FUND']
+        sorted_list = bist + others
+        return [{"label": f"🇹🇷 {q.get('shortname')} ({q.get('symbol')})" if q in bist else f"🌍 {q.get('shortname')} ({q.get('symbol')})", 
+                 "symbol": q.get('symbol')} for q in sorted_list[:8]]
     except: return []
 
-# --- 4. ANA ARAYÜZ (MARKET DASHBOARD) ---
-st.markdown(f"""
-    <div class="market-header">
-        <h1 style="margin:0; letter-spacing:-2px; font-weight:900;">{L['title']}</h1>
-        <p style="color:#3b82f6; margin:0; font-weight:600;">{L['subtitle']}</p>
-    </div>
-""", unsafe_allow_html=True)
+# --- 4. LOGIC ---
+if 'auth' not in st.session_state: st.session_state.auth = False
 
-# Üst Metrikler (Canlı hisse simülasyonu gibi)
-m1, m2, m3, m4 = st.columns(4)
-for col, label, val in zip([m1, m2, m3, m4], 
-                           ["BIST 100", "USD/TRY", "BTC/USD", "ALTIN (GR)"], 
-                           ["9,120.4", "32.41", "68,432", "2,450"]):
-    with col:
-        st.markdown(f"""
-            <div class="metric-card">
-                <div class="metric-label">{label}</div>
-                <div class="metric-value">{val}</div>
+if not st.session_state.auth:
+    st.markdown(f"""
+        <div class="hero-container">
+            <h1 class="hero-title">{L['m_title']}</h1>
+            <p class="hero-subtitle">{L['m_subtitle']}</p>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 30px;">
+                <div class="blog-card">
+                    <h4>{L['b_feature_1']}</h4>
+                    <p>{L['b_desc_1']}</p>
+                </div>
+                <div class="blog-card">
+                    <h4>{L['b_feature_2']}</h4>
+                    <p>{L['b_desc_2']}</p>
+                </div>
             </div>
-        """, unsafe_allow_html=True)
+        </div>
+    """, unsafe_allow_html=True)
+    c1, c2, c3 = st.columns([1, 1.5, 1])
+    with c2:
+        if st.button(L['btn_enter']):
+            st.session_state.auth = True
+            st.rerun()
+    st.stop()
 
-st.write("---")
+st.sidebar.title("💎 Guardian Intelligence")
+user_input = st.sidebar.text_input(L['search_label'], placeholder="Örn: thy, sasa, btc")
 
-# Arama ve Detaylı Analiz
-search_q = st.text_input(L['search_label'], placeholder="Hisse kodu veya isim yazın...")
-
-if search_q:
-    results = fetch_market_data(search_q)
+if user_input:
+    results = fetch_assets(user_input)
     if results:
-        options = {f"{q.get('shortname')} ({q.get('symbol')})": q.get('symbol') for q in results}
-        selection = st.selectbox("Eşleşen Sonuçlar:", list(options.keys()))
-        ticker = options[selection]
-        
-        # Grafik Alanı
-        df = yf.download(ticker, period="1mo", progress=False)['Close']
+        choice = st.sidebar.selectbox(L['results_label'], options=[r['label'] for r in results])
+        ticker = [r['symbol'] for r in results if r['label'] == choice][0]
+        df = yf.download(ticker, period="1y", progress=False)['Close']
         if not df.empty:
-            c_left, c_right = st.columns([2, 1])
-            with c_left:
-                fig = px.area(df, template="plotly_dark", color_discrete_sequence=['#3b82f6'])
-                fig.update_layout(margin=dict(l=0, r=0, t=0, b=0), height=400)
-                st.plotly_chart(fig, use_container_width=True)
-            
-            with c_right:
-                # Ekonometrik Risk Analizi Kartı
-                returns = df.pct_change().dropna()
-                vol = (returns.std() * np.sqrt(252) * 100).iloc[0]
-                st.markdown(f"""
-                    <div class="metric-card" style="height:400px; display:flex; flex-direction:column; justify-content:center;">
-                        <div class="metric-label">{L['volatility']} (Annual)</div>
-                        <div class="metric-value">%{vol:.2f}</div>
-                        <br>
-                        <div class="metric-label">{L['risk_score']}</div>
-                        <div class="metric-value" style="color:{'#ef4444' if vol > 35 else '#22c55e'}">
-                            {'Yüksek' if vol > 35 else 'Düşük'}
-                        </div>
-                    </div>
-                """, unsafe_allow_html=True)
+            st.subheader(f"📊 {choice} Analiz Paneli")
+            st.plotly_chart(px.line(df, template="plotly_dark", color_discrete_sequence=['#3b82f6']), use_container_width=True)
+            returns = df.pct_change().dropna()
+            vol = (returns.std() * np.sqrt(252) * 100).iloc[0]
+            c1, c2 = st.columns(2)
+            c1.metric("Yıllık Volatilite", f"%{vol:.2f}")
+            c2.metric("Güven Seviyesi", "Yüksek" if vol < 25 else "Orta")
