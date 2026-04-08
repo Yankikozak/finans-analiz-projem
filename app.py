@@ -5,123 +5,117 @@ import numpy as np
 import plotly.express as px
 from datetime import datetime, timedelta
 
-# --- 1. CONFIG & STYLING ---
-st.set_page_config(page_title="Portfolio Intelligence Terminal", layout="wide")
+# --- 1. KURUMSAL YAPILANDIRMA ---
+st.set_page_config(page_title="Risk Control Terminal | Karar Destek Sistemi", layout="wide")
 
+# Modern UI Tasarımı
 st.markdown("""
     <style>
-    .metric-card { background-color: #111418; border: 1px solid #1f2937; padding: 20px; border-radius: 12px; }
-    .stButton>button { width: 100%; background-color: #2563eb; color: white; border-radius: 8px; }
-    .action-box { padding: 20px; border-radius: 10px; border-left: 5px solid; margin: 15px 0; }
+    .stMetric { background-color: #111418; border-radius: 12px; padding: 20px; border: 1px solid #1f2937; }
+    .stButton>button { width: 100%; border-radius: 8px; height: 3em; background-color: #2563eb; color: white; }
+    .action-box { padding: 20px; border-radius: 10px; margin-bottom: 20px; border-left: 5px solid #2563eb; background: #161b22; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. HESAPLAMA MOTORU (ENGINE) ---
-@st.cache_data(ttl=3600)
-def fetch_and_analyze(assets, weights, period="1y"):
-    try:
-        data = yf.download(assets, period=period, progress=False)['Close']
-        if isinstance(data, pd.Series): data = data.to_frame()
-        
-        returns = data.pct_change().dropna()
-        # Portföy Günlük Getirisi
-        port_returns = (returns * weights).sum(axis=1)
-        cum_returns = (1 + port_returns).cumprod()
-        
-        # Metrikler
-        vol = port_returns.std() * np.sqrt(252)
-        mdd = ((cum_returns / cum_returns.cummax()) - 1).min()
-        var_95 = np.percentile(port_returns, 5) # %95 VaR
-        
-        return {
-            "cum_returns": cum_returns,
-            "volatility": vol,
-            "mdd": mdd,
-            "var": var_95,
-            "last_return": (cum_returns.iloc[-1] - 1)
-        }
-    except Exception as e:
-        return None
+# --- 2. DEĞER ÖNERİSİ & GİRİŞ ---
+if 'started' not in st.session_state:
+    st.session_state.started = False
 
-# --- 3. KARAR DESTEK MANTIĞI (INTELLIGENCE) ---
-def get_strategic_advice(metrics):
-    vol = metrics['volatility'] * 100
-    var = abs(metrics['var'] * 100)
+if not st.session_state.started:
+    st.title("🛡️ Portföyünü Şansa Değil, Matematiğe Emanet Et.")
+    st.subheader("Veri bilimi tabanlı 'Kayıp Kontrol' ve karar destek sistemi.")
     
-    advice = []
-    if vol > 30:
-        advice.append(("🔴 Yüksek Risk", "Portföy oynaklığı çok yüksek. Agresif varlıkları (Kripto/Teknoloji) %15 azaltıp emtiaya yönelmek riski dengeler."))
-    elif vol < 15:
-        advice.append(("🟢 Defansif", "Portföyün oldukça güvenli ama getiri potansiyeli sınırlı. Küçük bir miktar endeks fonu eklenebilir."))
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        st.info("### 📉 Kayıp Kontrolü\nPiyasa çöküş senaryolarını önceden simüle edin.")
+    with c2:
+        st.success("### ⚖️ Akıllı Denge\nRisk skoru yüksek varlıklar için net aksiyon önerileri alın.")
+    with c3:
+        st.warning("### 🧠 AI Stratejist\nKarmaşık verileri rasyonel yatırım kararlarına dönüştürün.")
     
-    if var > 3.5:
-        advice.append(("⚠️ Kritik Kayıp Eşiği", f"Piyasadaki normal bir günde dahi %{var:.2f} kayıp ihtimalin var. Nakit rezervini artır."))
-        
-    return advice
+    st.markdown("---")
+    if st.button("Hemen Demo Portföyü İncele →"):
+        st.session_state.started = True
+        st.rerun()
+    st.stop()
 
-# --- 4. UI AKIŞI ---
-st.title("🛡️ Portfolio Intelligence Terminal")
-st.markdown("_Kayıp kontrolü ve stratejik karar destek sistemi_")
+# --- 3. AKILLI VERİ SÖZLÜĞÜ ---
+asset_db = {
+    "THYAO": "THYAO.IS", "ASELS": "ASELS.IS", "EREGL": "EREGL.IS", "TUPRS": "TUPRS.IS",
+    "BTC": "BTC-USD", "ETH": "ETH-USD", "ALTIN": "GC=F", "SILVER": "SI=F", "NASDAQ": "^IXIC"
+}
 
-# Sidebar - Portföy Girişi
+# --- 4. SIDEBAR ---
 st.sidebar.header("📂 Portföy Yönetimi")
-app_mode = st.sidebar.toggle("Kendi Portföyümü Oluştur", value=False)
+mode = st.sidebar.toggle("Kendi Portföyümü Oluştur", value=False)
 
-if not app_mode:
-    # DEMO MODU
-    st.sidebar.info("Şu an 'Dengeli Demo Portföy' aktif.")
+if not mode:
+    st.sidebar.info("Dengeli Demo Portföy aktif.")
     assets = ["THYAO.IS", "EREGL.IS", "BTC-USD", "GC=F"]
     weights = [0.3, 0.2, 0.1, 0.4]
 else:
-    # KULLANICI GİRİŞİ
-    raw_tickers = st.sidebar.text_input("Varlıklar (Virgülle ayırın)", "THYAO, EREGL, BTC, GOLD")
+    raw_input = st.sidebar.text_input("Varlıklar (Örn: THYAO, BTC, GOLD):", "THYAO, EREGL, BTC")
     tickers = []
-    for t in raw_tickers.split(","):
+    for t in raw_input.split(","):
         t = t.strip().upper()
         if t in ["BTC", "ETH"]: tickers.append(f"{t}-USD")
-        elif t in ["GOLD", "SILVER"]: tickers.append("GC=F" if t=="GOLD" else "SI=F")
+        elif t == "GOLD": tickers.append("GC=F")
         elif "." not in t: tickers.append(f"{t}.IS")
         else: tickers.append(t)
     assets = tickers
-    weights = [1/len(assets)] * len(assets) # Eşit ağırlık varsayılan
+    weights = [1/len(assets)] * len(assets)
 
-# Analiz Çalıştır
-metrics = fetch_and_analyze(assets, weights)
+# --- 5. ANALİZ MOTORU ---
+@st.cache_data(ttl=3600)
+def analyze_portfolio(tickers, w):
+    try:
+        data = yf.download(tickers, period="1y", progress=False)['Close']
+        if isinstance(data, pd.Series): data = data.to_frame()
+        returns = data.pct_change().dropna()
+        port_ret = (returns * w).sum(axis=1)
+        cum_ret = (1 + port_ret).cumprod()
+        return port_ret, cum_ret
+    except: return None
 
-if metrics:
-    # --- DASHBOARD ÜST ---
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Toplam Getiri", f"%{metrics['last_return']*100:.2f}")
-    c2.metric("Yıllık Risk", f"%{metrics['volatility']*100:.1f}")
-    c3.metric("Max Kayıp (DD)", f"%{metrics['mdd']*100:.1f}")
+res = analyze_portfolio(assets, weights)
+
+if res:
+    port_ret, cum_ret = res
     
-    risk_score = min(10, max(1, (metrics['volatility'] * 100) / 5))
-    c4.metric("Risk Skoru", f"{risk_score:.1;f} / 10")
-
-    # --- ANA GRAFİK ---
-    st.plotly_chart(px.line(metrics['cum_returns'], title="Kümülatif Getiri Trendi", template="plotly_dark"), use_container_width=True)
-
-    # --- KAYIP KONTROLÜ & STRES TESTİ ---
-    st.divider()
-    st.subheader("🧪 Kayıp Kontrolü & Stres Testi")
+    # --- 6. METRİKLER ---
+    col1, col2, col3, col4 = st.columns(4)
+    total_ret = (cum_ret.iloc[-1] - 1) * 100
+    vol = port_ret.std() * np.sqrt(252) * 100
+    mdd = ((cum_ret / cum_ret.cummax()) - 1).min() * 100
+    risk_score = min(10.0, max(1.0, vol / 5))
     
-    sc1, sc2 = st.columns(2)
-    with sc1:
-        st.write("### Olası Senaryolar")
-        crash_10 = -10 * (metrics['volatility'] / 0.18) # Basit beta tahmini
-        st.error(f"**%10 Piyasa Düşüşü:** Portföy tahmini **%{abs(crash_10):.1f}** değer kaybeder.")
-        st.warning(f"**Günlük VaR (%95):** Normal bir günde en fazla **%{abs(metrics['var']*100):.2f}** kayıp beklenir.")
+    col1.metric("Toplam Getiri", f"%{total_ret:.2f}")
+    col2.metric("Yıllık Oynaklık", f"%{vol:.2f}")
+    col3.metric("Maksimum Düşüş", f"%{mdd:.2f}")
+    col4.metric("Risk Skoru", f"{risk_score:.1f} / 10") # HATA BURADA DÜZELTİLDİ
 
-    with sc2:
-        st.write("### Stratejik Aksiyon Planı")
-        advices = get_strategic_advice(metrics)
-        for title, text in advices:
-            st.markdown(f"**{title}:** {text}")
-
-    # --- PORTFÖYÜ KAYDET (SaaS Özelliği İllüzyonu) ---
+    # --- 7. KAYIP KONTROLÜ & SENARYO ---
     st.divider()
-    if st.button("💾 Bu Portföyü ve Analizi Kaydet"):
-        st.toast("Portföy kaydedildi! (Üyelik özelliği)")
+    st.subheader("🧪 Kayıp Kontrolü: Stres Testi")
+    
+    s1, s2 = st.columns(2)
+    with s1:
+        st.markdown("**Olası Senaryolar**")
+        crash_10 = -10 * (vol / 18)
+        st.error(f"📉 **%10 Piyasa Düşüşü:** Portföy tahmini **%{abs(crash_10):.1f}** değer kaybeder.")
+        var_95 = np.percentile(port_ret, 5) * 100
+        st.warning(f"🛡️ **Günlük VaR (%95):** Normal bir günde max kayıp beklentisi: **%{abs(var_95):.2f}**")
+
+    with s2:
+        st.markdown("**Stratejik Aksiyon Planı**")
+        if risk_score > 7:
+            st.markdown("<div class='action-box'>🔴 <b>KRİTİK:</b> Risk seviyen çok yüksek. Portföydeki volatil varlıkları %20 azaltıp Altın veya Nakit ekleyerek 'Hedge' yapmalısın.</div>", unsafe_allow_html=True)
+        elif total_ret < -5:
+            st.markdown("<div class='action-box'>🔵 <b>BİLGİ:</b> Portföy negatif bölgede. Maliyet düşürmek için kademeli alım stratejisi izlenebilir.</div>", unsafe_allow_html=True)
+        else:
+            st.markdown("<div class='action-box'>🟢 <b>STABİL:</b> Mevcut dağılım sağlıklı. Trendi bozmadan kâr hedefleri takip edilebilir.</div>", unsafe_allow_html=True)
+
+    st.plotly_chart(px.line(cum_ret, title="Portföy Performans Trendi", template="plotly_dark"), use_container_width=True)
 
 else:
-    st.error("Veriler yüklenemedi. Lütfen sembolleri kontrol edin.")
+    st.error("Veri çekme hatası. Lütfen sembolleri kontrol edin.")
