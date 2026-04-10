@@ -1,6 +1,8 @@
 streamlit
-yfinance
 pandas
 numpy
 plotly
-rapidfuzz
+yfinance
+beautifulsoup4
+requests
+openai
